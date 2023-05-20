@@ -1,0 +1,266 @@
+---
+title: "yaniv"
+author: "Rumpus"
+date: "5/19/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r cards}
+CARDS <- paste(
+  rep(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13),rep(4, 13)),
+  rep(c(1, 2, 3, 4), 13),
+  sep = "_")
+```
+
+## Functions
+
+```{r basic functions, echo=FALSE}
+# Function to check the value of a card
+check_value <- function(card) {
+  value <- as.numeric(strsplit(card, "_")[[1]][1])
+  if(value > 10) {
+    value <- 10
+  }
+  return(value)
+}
+
+# Function to check the number of a card
+check_number <- function(card) {
+  value <- as.numeric(strsplit(card, "_")[[1]][1])
+  return(value)
+}
+
+# Function to check the suit of a card
+check_suit <- function(card) {
+  suit <- as.numeric(strsplit(card, "_")[[1]][2])
+  return(suit)
+}
+
+# Function to check for a run in a hand of cards
+check_run <- function(hand) {
+  suits <- sapply(hand, check_suit)
+  values <- sapply(hand, check_number)
+  num_cards <- length(hand)
+  
+  if (num_cards < 3) {
+    return(NULL)
+  }
+
+  for (i in 1:(num_cards - 2)) {
+    if (suits[i] == suits[i + 1] && suits[i] == suits[i + 2] && values[i] == values[i + 1] - 1 && values[i] == values[i + 2] - 2) {
+      return(c(i, i + 1, i + 2))
+    }
+  }
+  
+  return(NULL)  # No run found
+}
+
+# Function to check for duplicate values in a hand of cards
+check_dupes <- function(hand) {
+  values <- sapply(hand, check_number)
+  duplicate_indices <- duplicated(values) | duplicated(values, fromLast = TRUE)
+  
+  if (any(duplicate_indices)) {
+    return(which(duplicate_indices))
+  }
+  
+  return(NULL)  # No duplicates found
+}
+
+# Helper function to sort a hand of five cards by value
+new_hand <- function(hand) {
+  sorted_hand <- hand[order(sapply(hand, check_number))]
+  return(sorted_hand)
+}
+
+# Function to assess a hand of cards
+assess_hand <- function(hand) {
+  run_indices <- check_run(hand)
+  dupe_indices <- check_dupes(hand)
+  
+  if (!is.null(run_indices) && !is.null(dupe_indices)) {
+    # If both a run and duplicate set exist, prioritize the larger set
+    if (length(run_indices) >= length(dupe_indices)) {
+      remaining_indices <- setdiff(seq_along(hand), c(run_indices, dupe_indices))
+    } else {
+      remaining_indices <- setdiff(seq_along(hand), c(dupe_indices, run_indices))
+    }
+    
+    run_set <- hand[run_indices]
+    dupe_set <- hand[dupe_indices]
+    remaining_cards <- hand[remaining_indices]
+    
+    return(c(list(run_set), list(dupe_set), remaining_cards))
+  }
+  
+  if (!is.null(run_indices)) {
+    remaining_indices <- setdiff(seq_along(hand), run_indices)
+    
+    run_set <- hand[run_indices]
+    remaining_cards <- hand[remaining_indices]
+    
+    return(c(list(run_set), remaining_cards))
+  }
+  
+  if (!is.null(dupe_indices)) {
+    remaining_indices <- setdiff(seq_along(hand), dupe_indices)
+    
+    dupe_set <- hand[dupe_indices]
+    remaining_cards <- hand[remaining_indices]
+    
+    return(c(list(dupe_set), remaining_cards))
+  }
+  
+  # If no run or duplicate set is found
+  return(as.list(hand))
+}
+
+# Function to calculate the total values of each list item
+hand_values <- function(hand_list) {
+  values <- lapply(hand_list, function(item) {
+    item_values <- sapply(item, check_value)
+    total_value <- sum(item_values)
+    return(total_value)
+  })
+  
+  return(values)
+}
+```
+
+## Testing
+
+```{r}
+hand
+assess_hand(hand)
+hand_values(assess_hand(hand))
+```
+
+```{r}
+# Function to simulate hands of five cards until a condition is met
+simulate_hands <- function() {
+  while (TRUE) {
+    hand <- new_hand(sample(CARDS, 5)) 
+    hand
+    
+    run_indices <- check_run(hand)
+    dupe_indices <- check_dupes(hand)
+    
+    if (!is.null(run_indices)) {
+      print(hand)
+      print("Found a run!")
+      print(hand[run_indices])
+      break
+    }
+    
+    # if (!is.null(dupe_indices)) {
+    #   print(hand)
+    #   print("Found duplicate values!")
+    #   print(hand[dupe_indices])
+    #   break
+    # }
+  }
+}
+```
+
+## Gameplay Sim
+
+```{r}
+# Function to play the game
+play_game <- function() {
+  # Initialize the deck and shuffle it
+  deck <- sample(CARDS)
+  discard_pile <- c()
+  
+  # Deal initial hands to the opponent and the player
+  opponent_hand <- new_hand(sample(deck, 5))
+  player_hand <- new_hand(sample(deck, 5))
+  deck <- deck[!deck %in% c(opponent_hand, player_hand)]
+  
+  # Game loop
+  for (card in deck) {
+    # Opponent's turn
+    opponent_assessment <- assess_hand(opponent_hand)
+    opponent_values <- hand_values(opponent_assessment)
+    max_value_index <- which.max(opponent_values)
+    discard_card <- opponent_assessment[[max_value_index]]
+    discard_pile <- c(discard_pile, discard_card)
+    opponent_hand <- setdiff(opponent_hand, discard_card)
+    if (length(deck) > 0) {
+      opponent_hand <- new_hand(c(opponent_hand, deck[1]))
+      deck <- deck[-1]
+    } else {
+      print("Deck ran out")
+    }
+    
+    # Check if the game is over
+    total_opponent_value <- sum(unlist(hand_values(assess_hand(opponent_hand))))
+    if (total_opponent_value <= 7) {
+      print("Opponent wins!")
+      print("Your opponent's winning hand, with a value of:")
+      print(total_opponent_value)
+      print(opponent_hand)
+      print("Your losing hand, with a value of:")
+      print(total_player_value)
+      print(player_hand)
+      break
+    }
+    
+    # Player's turn
+    player_assessment <- assess_hand(player_hand)
+    player_values <- hand_values(player_assessment)
+    
+    # Print current hand and assessment
+    print("Your current hand:")
+    print(player_hand)
+    print("Last discarded card:")
+    print(discard_card)
+    print("Assessment of your hand:")
+    print(player_assessment)
+    
+    # Prompt the user for input
+    message <- paste("Enter the number corresponding to the item you want to discard (1 -", length(player_assessment), "):")
+    discard_index <- as.integer(readline(prompt = message))
+    
+    # Validate user input
+    while (discard_index < 1 || discard_index > length(player_assessment)) {
+      message <- paste("Invalid input! Enter a number between 1 and", length(player_assessment), ":")
+      discard_index <- as.integer(readline(prompt = message))
+    }
+    
+    discard_card <- player_assessment[[discard_index]]
+    discard_pile <- c(discard_pile, discard_card)
+    player_hand <- setdiff(player_hand, discard_card)
+    if (length(deck) > 0) {
+      player_hand <- new_hand(c(player_hand, deck[1]))
+      new_card <- deck[-1]
+      deck <- new_card
+    } else {
+      print("Deck ran out")
+    }
+    
+    # Check if the game is over
+    total_player_value <- sum(unlist(hand_values(assess_hand(player_hand))))
+    if (total_player_value <= 7) {
+      print("You win!")
+      print("Your winning hand, with a value of:", total_player_value)
+      print(total_player_value)
+      print(player_hand)
+      print("Your opponent's hand, with a value of:", total_opponent_value)
+      print(total_opponent_value)
+      print(opponent_hand)
+      break
+    }
+  }
+}
+
+# Play the game
+play_game()
+```
+
+
+
